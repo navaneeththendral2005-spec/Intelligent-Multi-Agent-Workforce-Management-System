@@ -1,4 +1,4 @@
-# CHORUS — Multi-Agent AI Employee
+# CHORUS — Intelligent Multi-Agent Workforce Management System
 
 CHORUS is an AI-powered multi-agent employee system designed to understand user requests, coordinate specialized AI agents, and execute tasks across software development, research, data analysis, document generation, and communication.
 
