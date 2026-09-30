@@ -11,3 +11,9 @@ tokens/
 
 # Generated user projects
 workspace/*
+
+# Generated documents
+generated_documents/
+
+# Local source archives
+*-source.zip
