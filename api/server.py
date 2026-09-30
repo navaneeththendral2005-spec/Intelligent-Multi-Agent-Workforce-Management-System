@@ -893,6 +893,7 @@ def chat(
 
         email_action = None
         file_action = None
+        workflow_success = True
 
         response_text = ""
 
@@ -905,8 +906,16 @@ def chat(
             dict,
         ):
 
+            workflow_success = result.get(
+                "success",
+                True,
+            ) is not False
+
             response_text = str(
                 result.get(
+                    "research_response",
+                )
+                or result.get(
                     "final_response",
                     "",
                 )
@@ -1075,7 +1084,7 @@ def chat(
         # FILE RESPONSE
         # =================================================
 
-        elif file_action is not None:
+        elif file_action is not None and not response_text:
 
             response_text = (
                 "Your document is ready."
@@ -1097,7 +1106,7 @@ def chat(
         )
 
         return ChatResponse(
-            success=True,
+            success=workflow_success,
             response=response_text,
             email_action=email_action,
             file_action=file_action,

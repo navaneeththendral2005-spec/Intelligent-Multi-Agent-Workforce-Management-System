@@ -132,23 +132,29 @@ class AgentOrchestrator:
 
     def _detect_simple_agent(self, request: str):
         """
-        Detect requests that can be handled directly by a single
+        Detect requests that can be handled directly by one
         specialized agent.
 
-        Priority matters here.
+        Routing is intentionally conservative:
+        - Explicit file-generation requests go to Document.
+        - Research intent wins over the generic word "report".
+        - A plain report is treated as written content unless the
+          user explicitly asks for a file format.
         """
 
         if not request:
             return None
 
-        text = request.lower()
+        text = request.lower().strip()
 
-        # Communication
+        # -----------------------------------------------------
+        # COMMUNICATION
+        # -----------------------------------------------------
         communication_keywords = [
             "send email",
             "send an email",
-            "email",
-            "mail",
+            "email someone",
+            "reply to an email",
             "gmail",
             "send a message",
             "send message",
@@ -157,27 +163,90 @@ class AgentOrchestrator:
         if any(keyword in text for keyword in communication_keywords):
             return "communication"
 
-        # Document
-        document_keywords = [
-            "create document",
+        # -----------------------------------------------------
+        # DOCUMENT / FILE GENERATION
+        #
+        # Do NOT use generic words such as "report" or "document"
+        # here. "research report" is a research request, while
+        # "create a PDF report" is a document request.
+        # -----------------------------------------------------
+        explicit_document_phrases = [
             "create a document",
+            "create document",
             "make a document",
-            "generate document",
             "generate a document",
-            "write a document",
+            "create a pdf",
             "create pdf",
+            "generate a pdf",
             "generate pdf",
-            "create report",
-            "generate report",
-            "document",
-            "pdf",
-            "report",
+            "create a word document",
+            "create word document",
+            "generate a word document",
+            "create a docx",
+            "generate a docx",
+            "create an excel file",
+            "create excel file",
+            "generate an excel file",
+            "create a spreadsheet",
+            "generate a spreadsheet",
+            "create a powerpoint",
+            "generate a powerpoint",
+            "create a ppt",
+            "generate a ppt",
+            "create a pptx",
+            "generate a pptx",
+            "create a file",
+            "generate a file",
+            "export as pdf",
+            "export to pdf",
+            "save as pdf",
         ]
 
-        if any(keyword in text for keyword in document_keywords):
+        explicit_document_extensions = [
+            ".pdf",
+            ".docx",
+            ".xlsx",
+            ".xls",
+            ".pptx",
+            ".ppt",
+        ]
+
+        if (
+            any(phrase in text for phrase in explicit_document_phrases)
+            or any(extension in text for extension in explicit_document_extensions)
+        ):
             return "document"
 
-        # Data analysis
+        # -----------------------------------------------------
+        # RESEARCH
+        #
+        # Research must be checked before generic writing/report
+        # language so requests such as "research report" remain
+        # with the Research Agent.
+        # -----------------------------------------------------
+        research_keywords = [
+            "research",
+            "research report",
+            "research paper",
+            "search the web",
+            "search online",
+            "look up",
+            "find information",
+            "find sources",
+            "latest information",
+            "latest news",
+            "recent information",
+            "what is",
+            "who is",
+            "compare",
+        ]
+
+        if any(keyword in text for keyword in research_keywords):
+            return "research"
+
+        # -----------------------------------------------------
+        # DATA ANALYSIS
+        # -----------------------------------------------------
         data_keywords = [
             "analyze data",
             "analyse data",
@@ -197,31 +266,14 @@ class AgentOrchestrator:
             "calculate average",
             "find the average",
             "find total",
-            "analyze",
-            "analyse",
         ]
 
         if any(keyword in text for keyword in data_keywords):
             return "data"
 
-        # Research
-        research_keywords = [
-            "research",
-            "search the web",
-            "search online",
-            "look up",
-            "find information",
-            "latest information",
-            "latest news",
-            "what is",
-            "who is",
-            "compare",
-        ]
-
-        if any(keyword in text for keyword in research_keywords):
-            return "research"
-
-        # Content
+        # -----------------------------------------------------
+        # CONTENT / WRITING
+        # -----------------------------------------------------
         content_keywords = [
             "write",
             "rewrite",
@@ -229,6 +281,7 @@ class AgentOrchestrator:
             "summarise",
             "blog",
             "article",
+            "report",
             "caption",
             "social media",
             "creative",
@@ -237,7 +290,9 @@ class AgentOrchestrator:
         if any(keyword in text for keyword in content_keywords):
             return "content"
 
-        # Developer
+        # -----------------------------------------------------
+        # DEVELOPER
+        # -----------------------------------------------------
         developer_keywords = [
             "code",
             "coding",
@@ -672,6 +727,175 @@ Do not expose internal orchestration details unless useful.
             "The individual agent results were processed successfully."
         )
 
+    @staticmethod
+    def _is_research_then_document_request(request: str) -> bool:
+        """
+        Detect requests that explicitly ask CHORUS to research a topic
+        and then create a document/file from that research.
+
+        These requests must be handled as a sequential workflow:
+        Research -> Document. They must not be routed directly to the
+        Document Agent merely because the request contains "PDF",
+        "document", or another output-format phrase.
+        """
+        text = str(request or "").lower().strip()
+
+        if not text:
+            return False
+
+        research_signals = [
+            "research",
+            "search the web",
+            "search online",
+            "find sources",
+            "find information",
+            "look up",
+            "investigate",
+        ]
+
+        document_signals = [
+            "generate a pdf",
+            "generate pdf",
+            "create a pdf",
+            "create pdf",
+            "make a pdf",
+            "pdf document",
+            "generate a document",
+            "create a document",
+            "make a document",
+            "generate a report",
+            "create a report",
+            "make a report",
+            "export as pdf",
+            "export to pdf",
+        ]
+
+        has_research = any(
+            signal in text for signal in research_signals
+        )
+        has_document = any(
+            signal in text for signal in document_signals
+        )
+
+        return has_research and has_document
+
+    def _run_research_then_document(
+        self,
+        request: str,
+        attachments=None,
+    ):
+        """
+        Execute a research-first document workflow.
+
+        1. Research Agent performs the actual web research.
+        2. The research output is explicitly passed to Document Agent.
+        3. The same research output is returned as `research_response`
+           so the API can show it to the user BEFORE the file card.
+        """
+        research_agent = self.registry.get("research")
+        document_agent = self.registry.get("document")
+
+        if research_agent is None:
+            raise ValueError("Research Agent is not registered.")
+
+        if document_agent is None:
+            raise ValueError("Document Agent is not registered.")
+
+        research_task = self._append_attachment_context(
+            request,
+            attachments,
+        )
+
+        research_result = research_agent.run(research_task)
+
+        if isinstance(research_result, dict):
+            research_text = str(
+                research_result.get("content")
+                or research_result.get("response")
+                or research_result.get("final_response")
+                or research_result.get("message")
+                or ""
+            ).strip()
+        else:
+            research_text = str(research_result or "").strip()
+
+        if not research_text:
+            return {
+                "success": False,
+                "results": {
+                    "research": research_result,
+                },
+                "research_response": (
+                    "RESEARCH FAILED\n\n"
+                    "The Research Agent did not return usable research content."
+                ),
+                "final_response": (
+                    "The Research Agent did not return usable research content."
+                ),
+                "email_action": None,
+                "file_action": None,
+            }
+
+        # If the research agent explicitly failed, do not manufacture a
+        # document from an error message.
+        if research_text.upper().startswith("RESEARCH FAILED"):
+            return {
+                "success": False,
+                "results": {
+                    "research": research_result,
+                },
+                "research_response": research_text,
+                "final_response": research_text,
+                "email_action": None,
+                "file_action": None,
+            }
+
+        document_task = f"""
+Create the requested document/file described by the user.
+
+ORIGINAL USER REQUEST:
+{request}
+
+RESEARCH CONTENT PRODUCED BY CHORUS RESEARCH AGENT:
+{research_text}
+
+DOCUMENT INSTRUCTIONS:
+- Use the research content above as the factual source for the document.
+- Do not perform new research.
+- Do not replace the supplied research with generic content.
+- Preserve the important findings, uncertainty, and references from the research.
+- Generate the requested output format.
+""".strip()
+
+        document_result = document_agent.run(
+            document_task
+        )
+
+        file_action = None
+        if isinstance(document_result, dict):
+            if document_result.get("type") == "file":
+                file_action = document_result
+            else:
+                file_action = (
+                    document_result.get("file_action")
+                    or document_result.get("document_action")
+                )
+
+        return {
+            "success": not (
+                isinstance(document_result, dict)
+                and document_result.get("type") == "error"
+            ),
+            "results": {
+                "research": research_result,
+                "document": document_result,
+            },
+            "research_response": research_text,
+            "final_response": research_text,
+            "email_action": None,
+            "file_action": file_action,
+        }
+
     # ============================================================
     # MAIN ORCHESTRATION
     # ============================================================
@@ -715,6 +939,20 @@ Do not expose internal orchestration details unless useful.
         )
 
         # --------------------------------------------------------
+        # RESEARCH -> DOCUMENT FAST PATH
+        # --------------------------------------------------------
+        # This MUST run before generic document routing. Otherwise a
+        # request containing both "research" and "generate a PDF"
+        # gets sent directly to Document Agent and skips research.
+        # --------------------------------------------------------
+
+        if self._is_research_then_document_request(request):
+            return self._run_research_then_document(
+                request=request,
+                attachments=attachments,
+            )
+
+        # --------------------------------------------------------
         # SIMPLE REQUEST FAST PATH
         # --------------------------------------------------------
 
@@ -727,8 +965,30 @@ Do not expose internal orchestration details unless useful.
                 attachments=attachments,
             )
 
-            # Communication already returns structured data.
+            # Communication and successful document actions already
+            # return structured data. Normalize error dictionaries so
+            # the API does not turn them into a generic blank response.
             if isinstance(result, dict):
+                if (
+                    result.get("success") is False
+                    or result.get("type") == "error"
+                ):
+                    error_message = (
+                        result.get("user_message")
+                        or result.get("message")
+                        or "The agent could not complete the request."
+                    )
+
+                    return {
+                        "results": {
+                            simple_agent: result
+                        },
+                        "final_response": str(error_message),
+                        "email_action": result.get("email_action"),
+                        "file_action": result.get("file_action"),
+                        "success": False,
+                    }
+
                 return result
 
             return {
@@ -737,6 +997,7 @@ Do not expose internal orchestration details unless useful.
                 },
                 "final_response": str(result),
                 "email_action": None,
+                "success": True,
             }
 
         # --------------------------------------------------------

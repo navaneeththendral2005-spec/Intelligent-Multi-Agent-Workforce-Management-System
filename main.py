@@ -2,6 +2,9 @@ import warnings
 
 from dotenv import load_dotenv
 
+# Load environment variables before importing agent modules.
+load_dotenv()
+
 from agents.manager_agent import ManagerAgent
 from agents.developer_agent import DeveloperAgent
 from agents.backend_agent import BackendAgent
@@ -17,13 +20,6 @@ from agents.tester_agent import TesterAgent
 from agents.debugger_agent import DebuggerAgent
 from agents.code_reviewer_agent import CodeReviewerAgent
 from agents.code_fixer_agent import CodeFixerAgent
-
-
-# ---------------------------------------------------------
-# LOAD ENVIRONMENT
-# ---------------------------------------------------------
-
-load_dotenv()
 
 
 # ---------------------------------------------------------
