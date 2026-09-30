@@ -6,6 +6,213 @@ import { AGENTS } from '../data/agents'
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
+/* =========================================================
+   ASSISTANT MARKDOWN FORMATTER
+   ========================================================= */
+
+function formatAssistantMarkdown(content) {
+  if (!content) return ''
+
+  let formatted = String(content)
+    .replace(/\r\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+
+  const headings = [
+    'EXECUTIVE SUMMARY',
+    'RESEARCH SUMMARY',
+    'KEY FINDINGS',
+    'KEY TAKEAWAYS',
+    'KEY POINTS',
+    'INTRODUCTION',
+    'OVERVIEW',
+    'BACKGROUND',
+    'APPLICATIONS',
+    'BENEFITS',
+    'ADVANTAGES',
+    'CHALLENGES',
+    'LIMITATIONS',
+    'RISKS',
+    'USE CASES',
+    'IMPLEMENTATION',
+    'RECOMMENDATIONS',
+    'BEST PRACTICES',
+    'FUTURE TRENDS',
+    'FUTURE DIRECTIONS',
+    'CONCLUSION',
+    'REFERENCES',
+  ]
+
+  /*
+   * -------------------------------------------------------
+   * 1. Convert accidentally bolded headings into Markdown
+   * headings.
+   *
+   * Example:
+   *
+   * **RESEARCH SUMMARY**
+   *
+   * becomes:
+   *
+   * ## RESEARCH SUMMARY
+   * -------------------------------------------------------
+   */
+
+  for (const heading of headings) {
+    const escaped = heading.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    )
+
+    formatted = formatted.replace(
+      new RegExp(
+        `(^|\\n)\\s*\\*\\*${escaped}\\*\\*\\s*(?=\\n|$)`,
+        'gi'
+      ),
+      `$1## ${heading}`
+    )
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 2. Handle a response where the entire section was
+   * accidentally wrapped in bold.
+   *
+   * Example:
+   *
+   * **RESEARCH SUMMARY
+   * Generative AI has evolved...
+   * **
+   *
+   * becomes:
+   *
+   * ## RESEARCH SUMMARY
+   *
+   * Generative AI has evolved...
+   * -------------------------------------------------------
+   */
+
+  for (const heading of headings) {
+    const escaped = heading.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    )
+
+    formatted = formatted.replace(
+      new RegExp(
+        `(^|\\n)\\s*\\*\\*${escaped}\\s*(?=\\n)`,
+        'gi'
+      ),
+      `$1## ${heading}\n\n`
+    )
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 3. Convert plain uppercase headings appearing on their
+   * own line into Markdown headings.
+   *
+   * Example:
+   *
+   * RESEARCH SUMMARY
+   * Generative AI has evolved...
+   *
+   * becomes:
+   *
+   * ## RESEARCH SUMMARY
+   *
+   * Generative AI has evolved...
+   * -------------------------------------------------------
+   */
+
+  for (const heading of headings) {
+    const escaped = heading.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    )
+
+    formatted = formatted.replace(
+      new RegExp(
+        `(^|\\n)\\s*${escaped}\\s*(?=\\n|$)`,
+        'gi'
+      ),
+      `$1## ${heading}`
+    )
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 4. Handle headings returned inline with their content.
+   *
+   * Example:
+   *
+   * RESEARCH SUMMARY Generative AI has evolved...
+   *
+   * becomes:
+   *
+   * ## RESEARCH SUMMARY
+   *
+   * Generative AI has evolved...
+   * -------------------------------------------------------
+   */
+
+  for (const heading of headings) {
+    const escaped = heading.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    )
+
+    formatted = formatted.replace(
+      new RegExp(
+        `(^|\\n|(?<!#)\\s)${escaped}\\s+(?=[A-Z])`,
+        'g'
+      ),
+      (match, prefix) => {
+        let linePrefix = ''
+
+        if (prefix === '\n') {
+          linePrefix = '\n'
+        } else if (prefix === ' ') {
+          linePrefix = '\n\n'
+        }
+
+        return `${linePrefix}## ${heading}\n\n`
+      }
+    )
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 5. Remove an accidental closing bold marker that may
+   * remain after converting a whole bold section.
+   *
+   * Only removes a standalone trailing **.
+   * -------------------------------------------------------
+   */
+
+  formatted = formatted.replace(
+    /\n\s*\*\*\s*$/g,
+    ''
+  )
+
+  /*
+   * -------------------------------------------------------
+   * 6. Prevent excessive blank lines.
+   * -------------------------------------------------------
+   */
+
+  formatted = formatted
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  return formatted
+}
+
+/* =========================================================
+   MESSAGE BUBBLE
+   ========================================================= */
+
 export default function MessageBubble({ message }) {
   const isUser = message.role === 'user'
 
@@ -14,6 +221,10 @@ export default function MessageBubble({ message }) {
         (item) => item.id === message.agentId
       )
     : null
+
+  /* =======================================================
+     USER MESSAGE
+     ======================================================= */
 
   if (isUser) {
     const uploadedFiles =
@@ -36,6 +247,7 @@ export default function MessageBubble({ message }) {
         className="flex justify-end"
       >
         <div className="flex max-w-[75%] flex-col items-end gap-1.5">
+
           {/* =================================================
               UPLOADED FILE INDICATOR
              ================================================= */}
@@ -48,9 +260,7 @@ export default function MessageBubble({ message }) {
 
               <span className="truncate">
                 {uploadedFiles.length === 1
-                  ? `File uploaded · ${
-                      uploadedFiles[0]
-                    }`
+                  ? `File uploaded · ${uploadedFiles[0]}`
                   : `${uploadedFiles.length} files uploaded`}
               </span>
             </div>
@@ -68,6 +278,10 @@ export default function MessageBubble({ message }) {
     )
   }
 
+  /* =======================================================
+     ASSISTANT MESSAGE
+     ======================================================= */
+
   return (
     <motion.div
       initial={{
@@ -84,9 +298,10 @@ export default function MessageBubble({ message }) {
       }}
       className="flex max-w-[82%] flex-col items-start gap-2"
     >
-      {/* =================================================
+
+      {/* ===================================================
           AGENT IDENTITY
-         ================================================= */}
+         =================================================== */}
 
       <div className="flex items-center gap-2">
         <span
@@ -108,38 +323,59 @@ export default function MessageBubble({ message }) {
         </span>
       </div>
 
-      {/* =================================================
+      {/* ===================================================
           RESPONSE
-         ================================================= */}
+         =================================================== */}
 
       {message.content && (
         <div className="w-full text-[15px] leading-7 text-ink">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
+
+              /* =============================================
+                 H1
+                 ============================================= */
+
               h1: ({ children }) => (
-                <h1 className="mb-4 mt-2 text-2xl font-semibold tracking-tight">
+                <h1 className="mb-5 mt-3 text-2xl font-bold tracking-tight text-ink">
                   {children}
                 </h1>
               ),
 
+              /* =============================================
+                 H2
+                 ============================================= */
+
               h2: ({ children }) => (
-                <h2 className="mb-3 mt-6 text-xl font-semibold tracking-tight">
+                <h2 className="mb-3 mt-7 text-xl font-bold tracking-tight text-ink">
                   {children}
                 </h2>
               ),
 
+              /* =============================================
+                 H3
+                 ============================================= */
+
               h3: ({ children }) => (
-                <h3 className="mb-2 mt-5 text-lg font-semibold">
+                <h3 className="mb-3 mt-6 text-lg font-bold tracking-tight text-ink">
                   {children}
                 </h3>
               ),
 
+              /* =============================================
+                 PARAGRAPH
+                 ============================================= */
+
               p: ({ children }) => (
-                <p className="mb-4 last:mb-0">
+                <p className="mb-5 leading-7 last:mb-0">
                   {children}
                 </p>
               ),
+
+              /* =============================================
+                 BOLD TEXT
+                 ============================================= */
 
               strong: ({ children }) => (
                 <strong className="font-semibold">
@@ -147,11 +383,19 @@ export default function MessageBubble({ message }) {
                 </strong>
               ),
 
+              /* =============================================
+                 ITALIC TEXT
+                 ============================================= */
+
               em: ({ children }) => (
                 <em className="italic">
                   {children}
                 </em>
               ),
+
+              /* =============================================
+                 UNORDERED LIST
+                 ============================================= */
 
               ul: ({ children }) => (
                 <ul className="mb-4 ml-5 list-disc space-y-1.5">
@@ -159,11 +403,19 @@ export default function MessageBubble({ message }) {
                 </ul>
               ),
 
+              /* =============================================
+                 ORDERED LIST
+                 ============================================= */
+
               ol: ({ children }) => (
                 <ol className="mb-4 ml-5 list-decimal space-y-1.5">
                   {children}
                 </ol>
               ),
+
+              /* =============================================
+                 LIST ITEM
+                 ============================================= */
 
               li: ({ children }) => (
                 <li className="pl-1">
@@ -171,15 +423,27 @@ export default function MessageBubble({ message }) {
                 </li>
               ),
 
+              /* =============================================
+                 HORIZONTAL RULE
+                 ============================================= */
+
               hr: () => (
                 <hr className="my-6 border-0 border-t border-line" />
               ),
+
+              /* =============================================
+                 BLOCKQUOTE
+                 ============================================= */
 
               blockquote: ({ children }) => (
                 <blockquote className="my-4 border-l-2 border-line pl-4 text-ink/70 italic">
                   {children}
                 </blockquote>
               ),
+
+              /* =============================================
+                 CODE
+                 ============================================= */
 
               code: ({
                 className,
@@ -211,11 +475,19 @@ export default function MessageBubble({ message }) {
                 )
               },
 
+              /* =============================================
+                 CODE BLOCK
+                 ============================================= */
+
               pre: ({ children }) => (
                 <pre className="my-4 overflow-x-auto rounded-xl">
                   {children}
                 </pre>
               ),
+
+              /* =============================================
+                 LINKS
+                 ============================================= */
 
               a: ({
                 href,
@@ -231,6 +503,10 @@ export default function MessageBubble({ message }) {
                 </a>
               ),
 
+              /* =============================================
+                 TABLE
+                 ============================================= */
+
               table: ({ children }) => (
                 <div className="my-5 overflow-x-auto rounded-xl border border-line">
                   <table className="w-full border-collapse text-sm">
@@ -239,17 +515,29 @@ export default function MessageBubble({ message }) {
                 </div>
               ),
 
+              /* =============================================
+                 TABLE HEADER
+                 ============================================= */
+
               thead: ({ children }) => (
                 <thead className="bg-ink/[0.04]">
                   {children}
                 </thead>
               ),
 
+              /* =============================================
+                 TABLE HEADER CELL
+                 ============================================= */
+
               th: ({ children }) => (
                 <th className="border-b border-line px-3 py-2.5 text-left font-semibold">
                   {children}
                 </th>
               ),
+
+              /* =============================================
+                 TABLE DATA CELL
+                 ============================================= */
 
               td: ({ children }) => (
                 <td className="border-t border-line px-3 py-2.5">
@@ -258,14 +546,14 @@ export default function MessageBubble({ message }) {
               ),
             }}
           >
-            {message.content}
+            {formatAssistantMarkdown(message.content)}
           </ReactMarkdown>
         </div>
       )}
 
-      {/* =================================================
+      {/* ===================================================
           GENERATED FILE
-         ================================================= */}
+         =================================================== */}
 
       {message.fileAction && (
         <FileCard
@@ -273,9 +561,9 @@ export default function MessageBubble({ message }) {
         />
       )}
 
-      {/* =================================================
+      {/* ===================================================
           EMAIL ACTION
-         ================================================= */}
+         =================================================== */}
 
       {message.emailAction && (
         <EmailCard
@@ -286,7 +574,6 @@ export default function MessageBubble({ message }) {
   )
 }
 
-
 /* =========================================================
    UPLOADED FILE HELPERS
    ========================================================= */
@@ -296,7 +583,8 @@ function getUploadedFiles(attachment) {
     return []
   }
 
-  // Multiple uploaded files
+  /* Multiple uploaded files */
+
   if (
     Array.isArray(
       attachment.files
@@ -313,7 +601,8 @@ function getUploadedFiles(attachment) {
       .filter(Boolean)
   }
 
-  // Single uploaded file
+  /* Single uploaded file */
+
   const filename =
     attachment.originalName ||
     attachment.original_name ||
@@ -324,7 +613,6 @@ function getUploadedFiles(attachment) {
     ? [filename]
     : []
 }
-
 
 /* =========================================================
    FILE CARD
@@ -435,6 +723,7 @@ function FileCard({ fileAction }) {
       className="mt-2 w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-paper shadow-sm"
     >
       <div className="flex items-center gap-4 p-4">
+
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-ink text-lg text-paper">
           📄
         </div>
@@ -471,7 +760,6 @@ function FileCard({ fileAction }) {
     </motion.div>
   )
 }
-
 
 /* =========================================================
    EMAIL CARD
@@ -577,9 +865,7 @@ function EmailCard({ emailAction }) {
   const handleCancel = () => {
     /*
      * Cancellation never calls the backend.
-     *
-     * Therefore /api/send-email is NOT called
-     * and Gmail is NOT triggered.
+     * Therefore /api/send-email is NOT called.
      */
 
     setError('')
@@ -763,6 +1049,7 @@ function EmailCard({ emailAction }) {
         className="mt-2 w-full max-w-xl rounded-2xl border border-line bg-paper p-5 shadow-sm"
       >
         <div className="flex items-start gap-3">
+
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink/10 text-ink">
             ×
           </div>
@@ -799,6 +1086,7 @@ function EmailCard({ emailAction }) {
         className="mt-2 w-full max-w-xl rounded-2xl border border-line bg-paper p-5 shadow-sm"
       >
         <div className="flex items-start gap-3">
+
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper">
             ✓
           </div>
@@ -840,6 +1128,7 @@ function EmailCard({ emailAction }) {
   if (step === 'confirm') {
     return (
       <div className="mt-2 w-full max-w-xl rounded-2xl border border-line bg-paper p-5 shadow-sm">
+
         <div className="mb-4">
           <h3 className="text-base font-semibold text-ink">
             Confirm email
@@ -851,6 +1140,7 @@ function EmailCard({ emailAction }) {
         </div>
 
         <div className="space-y-3 text-sm">
+
           <div>
             <div className="mb-1 font-semibold text-ink/70">
               Recipient
@@ -889,6 +1179,7 @@ function EmailCard({ emailAction }) {
         )}
 
         <div className="mt-5 flex flex-wrap gap-2">
+
           <button
             type="button"
             disabled={sending}
@@ -920,6 +1211,7 @@ function EmailCard({ emailAction }) {
               ? 'Sending...'
               : '✓ Confirm & Send'}
           </button>
+
         </div>
       </div>
     )
@@ -931,6 +1223,7 @@ function EmailCard({ emailAction }) {
 
   return (
     <div className="mt-2 w-full max-w-xl rounded-2xl border border-line bg-paper p-5 shadow-sm">
+
       <div className="mb-5">
         <h3 className="text-base font-semibold text-ink">
           ✉ Email
@@ -942,6 +1235,7 @@ function EmailCard({ emailAction }) {
       </div>
 
       <div className="space-y-4">
+
         {/* Recipient */}
 
         <div>
@@ -1014,6 +1308,7 @@ function EmailCard({ emailAction }) {
       )}
 
       <div className="mt-5 flex flex-wrap justify-end gap-2">
+
         <button
           type="button"
           onClick={handleCancel}
@@ -1029,6 +1324,7 @@ function EmailCard({ emailAction }) {
         >
           Continue
         </button>
+
       </div>
     </div>
   )

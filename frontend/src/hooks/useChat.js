@@ -590,6 +590,7 @@ export function useChat() {
 
       try {
         data = await response.json()
+        console.log('🔥 CHORUS API RESPONSE:', data)
       } catch {
         data = null
       }
@@ -749,6 +750,18 @@ export function useChat() {
     setError(null)
   }, [])
 
+  /*
+   * UI-friendly thinking state.
+   *
+   * The backend currently returns one completed JSON response rather
+   * than a token/event stream, so the frontend treats the whole
+   * request lifecycle as CHORUS "thinking".
+   */
+  const thinkingAgentId =
+    isLoading
+      ? 'orchestrator'
+      : null
+
   return {
     conversations,
     chats: conversations,
@@ -760,6 +773,7 @@ export function useChat() {
 
     isLoading,
     loading: isLoading,
+    thinkingAgentId,
 
     error,
 
